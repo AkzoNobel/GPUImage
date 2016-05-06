@@ -36,6 +36,7 @@ typedef NS_ENUM(NSUInteger, GPUImageRotationMode) {
 + (GLint)maximumVaryingVectorsForThisDevice;
 + (BOOL)deviceSupportsOpenGLESExtension:(NSString *)extension;
 + (BOOL)deviceSupportsRedTextures;
++ (BOOL)deviceSupportsHalfFloats;
 + (BOOL)deviceSupportsFramebufferReads;
 + (CGSize)sizeThatFitsWithinATextureForSize:(CGSize)inputSize;
 

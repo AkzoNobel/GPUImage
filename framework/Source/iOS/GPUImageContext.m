@@ -159,6 +159,11 @@ static void *openGLESContextQueueKey;
     return [extensionNames containsObject:extension];
 }
 
++ (BOOL)deviceSupportsHalfFloats
+{
+    return [self deviceSupportsOpenGLESExtension:@"GL_OES_texture_half_float"];
+}
+
 
 // http://www.khronos.org/registry/gles/extensions/EXT/EXT_texture_rg.txt
 
