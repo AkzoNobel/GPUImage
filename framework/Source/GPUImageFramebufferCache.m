@@ -133,7 +133,7 @@
     defaultTextureOptions.wrapT = GL_CLAMP_TO_EDGE;
     defaultTextureOptions.internalFormat = GL_RGBA;
     defaultTextureOptions.format = GL_BGRA;
-    defaultTextureOptions.type = GL_UNSIGNED_BYTE;
+    defaultTextureOptions.type = [GPUImageContext deviceSupportsHalfFloats] ? GL_HALF_FLOAT_OES : GL_UNSIGNED_BYTE;
     
     return [self fetchFramebufferForSize:framebufferSize textureOptions:defaultTextureOptions onlyTexture:onlyTexture];
 }

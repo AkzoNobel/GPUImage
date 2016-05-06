@@ -1,5 +1,6 @@
 #import "GPUImageFramebuffer.h"
 #import "GPUImageOutput.h"
+#import "GPUImagePixelFormatConverter.h"
 
 @interface GPUImageFramebuffer()
 {
@@ -75,7 +76,7 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size);
     defaultTextureOptions.wrapT = GL_CLAMP_TO_EDGE;
     defaultTextureOptions.internalFormat = GL_RGBA;
     defaultTextureOptions.format = GL_BGRA;
-    defaultTextureOptions.type = GL_UNSIGNED_BYTE;
+    defaultTextureOptions.type = [GPUImageContext deviceSupportsHalfFloats] ? GL_HALF_FLOAT_OES : GL_UNSIGNED_BYTE;
 
     _textureOptions = defaultTextureOptions;
     _size = framebufferSize;
@@ -96,7 +97,7 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size);
     defaultTextureOptions.wrapT = GL_CLAMP_TO_EDGE;
     defaultTextureOptions.internalFormat = GL_RGBA;
     defaultTextureOptions.format = GL_BGRA;
-    defaultTextureOptions.type = GL_UNSIGNED_BYTE;
+    defaultTextureOptions.type = [GPUImageContext deviceSupportsHalfFloats] ? GL_HALF_FLOAT_OES : GL_UNSIGNED_BYTE;
 
     if (!(self = [self initWithSize:framebufferSize textureOptions:defaultTextureOptions onlyTexture:NO]))
     {
@@ -148,8 +149,12 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size);
             empty = CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks); // our empty IOSurface properties dictionary
             attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
             CFDictionarySetValue(attrs, kCVPixelBufferIOSurfacePropertiesKey, empty);
-            
-            CVReturn err = CVPixelBufferCreate(kCFAllocatorDefault, (int)_size.width, (int)_size.height, kCVPixelFormatType_32BGRA, attrs, &renderTarget);
+            CVReturn err = CVPixelBufferCreate(kCFAllocatorDefault,
+                                               (int)_size.width,
+                                               (int)_size.height,
+                                               self.textureOptions.type == GL_HALF_FLOAT_OES ? kCVPixelFormatType_64RGBAHalf : kCVPixelFormatType_32BGRA,
+                                               attrs,
+                                               &renderTarget);
             if (err)
             {
                 NSLog(@"FBO size: %f, %f", _size.width, _size.height);
@@ -306,33 +311,39 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
     [[GPUImageContext sharedFramebufferCache] removeFramebufferFromActiveImageCaptureList:framebuffer];
 }
 
-- (CGImageRef)newCGImageFromFramebufferContents;
+- (CGImageRef)newCGImageFromFramebufferContents
 {
-    // a CGImage can only be created from a 'normal' color texture
-    NSAssert(self.textureOptions.internalFormat == GL_RGBA, @"For conversion to a CGImage the output texture format for this filter must be GL_RGBA.");
-    NSAssert(self.textureOptions.type == GL_UNSIGNED_BYTE, @"For conversion to a CGImage the type of the output texture of this filter must be GL_UNSIGNED_BYTE.");
-    
     __block CGImageRef cgImageFromBytes;
-    
+
     runSynchronouslyOnVideoProcessingQueue(^{
         [GPUImageContext useImageProcessingContext];
-        
-        NSUInteger totalBytesForImage = (int)_size.width * (int)_size.height * 4;
+        NSUInteger numberOfPixels = (int)_size.width * (int)_size.height;
+        NSUInteger totalBytesForImage = 4 * numberOfPixels;
+        if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+            totalBytesForImage *= 2;
+        }
         // It appears that the width of a texture must be padded out to be a multiple of 8 (32 bytes) if reading from it using a texture cache
-        
-        GLubyte *rawImagePixels;
-        
+        BytePixel *rawImagePixels;
         CGDataProviderRef dataProvider = NULL;
-        if ([GPUImageContext supportsFastTextureUpload])
-        {
+        if ([GPUImageContext supportsFastTextureUpload]) {
 #if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
             NSUInteger paddedWidthOfImage = CVPixelBufferGetBytesPerRow(renderTarget) / 4.0;
+            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+                paddedWidthOfImage /= 2.0;
+            }
             NSUInteger paddedBytesForImage = paddedWidthOfImage * (int)_size.height * 4;
-            
+            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+                paddedBytesForImage /= 2.0;
+            }
+
             glFinish();
             CFRetain(renderTarget); // I need to retain the pixel buffer here and release in the data source callback to prevent its bytes from being prematurely deallocated during a photo write operation
             [self lockForReading];
-            rawImagePixels = (GLubyte *)CVPixelBufferGetBaseAddress(renderTarget);
+            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+                rawImagePixels = [GPUImagePixelFormatConverter bytePixelsFromHalfFloatPixels:(HalfFloatPixel *)CVPixelBufferGetBaseAddress(renderTarget) numberOfPixels:numberOfPixels];
+            } else {
+                rawImagePixels = (BytePixel *)CVPixelBufferGetBaseAddress(renderTarget);
+            }
             dataProvider = CGDataProviderCreateWithData((__bridge_retained void*)self, rawImagePixels, paddedBytesForImage, dataProviderUnlockCallback);
             [[GPUImageContext sharedFramebufferCache] addFramebufferToActiveImageCaptureList:self]; // In case the framebuffer is swapped out on the filter, need to have a strong reference to it somewhere for it to hang on while the image is in existence
 #else
@@ -341,18 +352,28 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
         else
         {
             [self activateFramebuffer];
-            rawImagePixels = (GLubyte *)malloc(totalBytesForImage);
-            glReadPixels(0, 0, (int)_size.width, (int)_size.height, GL_RGBA, GL_UNSIGNED_BYTE, rawImagePixels);
+            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+                HalfFloatPixel *halfFloats = malloc(numberOfPixels * sizeof(HalfFloatPixel));
+                glReadPixels(0, 0, (int)_size.width, (int)_size.height, GL_RGBA, GL_HALF_FLOAT_OES, halfFloats);
+                rawImagePixels = [GPUImagePixelFormatConverter bytePixelsFromHalfFloatPixels:halfFloats numberOfPixels:numberOfPixels];
+            } else {
+                rawImagePixels = (BytePixel *)malloc(numberOfPixels * sizeof(BytePixel));
+                glReadPixels(0, 0, (int)_size.width, (int)_size.height, GL_RGBA, GL_UNSIGNED_BYTE, rawImagePixels);
+            }
             dataProvider = CGDataProviderCreateWithData(NULL, rawImagePixels, totalBytesForImage, dataProviderReleaseCallback);
             [self unlock]; // Don't need to keep this around anymore
         }
-        
+
         CGColorSpaceRef defaultRGBColorSpace = CGColorSpaceCreateDeviceRGB();
-        
+
         if ([GPUImageContext supportsFastTextureUpload])
         {
 #if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
-            cgImageFromBytes = CGImageCreate((int)_size.width, (int)_size.height, 8, 32, CVPixelBufferGetBytesPerRow(renderTarget), defaultRGBColorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst, dataProvider, NULL, NO, kCGRenderingIntentDefault);
+            NSUInteger bytesPerRow = CVPixelBufferGetBytesPerRow(renderTarget);
+            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
+                bytesPerRow /= 2.0;
+            }
+            cgImageFromBytes = CGImageCreate((int)_size.width, (int)_size.height, 8, 32, bytesPerRow, defaultRGBColorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst, dataProvider, NULL, NO, kCGRenderingIntentDefault);
 #else
 #endif
         }

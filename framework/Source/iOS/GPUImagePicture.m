@@ -1,4 +1,5 @@
 #import "GPUImagePicture.h"
+#import "GPUImagePixelFormatConverter.h"
 
 @implementation GPUImagePicture
 
@@ -191,9 +192,9 @@
         dataFromImageDataProvider = CGDataProviderCopyData(CGImageGetDataProvider(newImageSource));
         imageData = (GLubyte *)CFDataGetBytePtr(dataFromImageDataProvider);
     }
-	
+
+    NSUInteger	totalNumberOfPixels = round(pixelSizeToUseForTexture.width * pixelSizeToUseForTexture.height);
 	if (removePremultiplication && premultiplied) {
-		NSUInteger	totalNumberOfPixels = round(pixelSizeToUseForTexture.width * pixelSizeToUseForTexture.height);
 		uint32_t	*pixelP = (uint32_t *)imageData;
 		uint32_t	pixel;
 		CGFloat		srcR, srcG, srcB, srcA;
@@ -257,9 +258,14 @@
         {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         }
-        // no need to use self.outputTextureOptions here since pictures need this texture formats and type
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)pixelSizeToUseForTexture.width, (int)pixelSizeToUseForTexture.height, 0, format, GL_UNSIGNED_BYTE, imageData);
-        
+
+        if ([GPUImageContext deviceSupportsHalfFloats]) {
+            HalfFloatPixel *halfFloats = [GPUImagePixelFormatConverter halfFloatFromBytePixels:(BytePixel *)imageData numberOfPixels:totalNumberOfPixels];
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)pixelSizeToUseForTexture.width, (int)pixelSizeToUseForTexture.height, 0, format, GL_HALF_FLOAT_OES, halfFloats);
+        } else {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)pixelSizeToUseForTexture.width, (int)pixelSizeToUseForTexture.height, 0, format, GL_UNSIGNED_BYTE, imageData);
+        }
+
         if (self.shouldSmoothlyScaleOutput)
         {
             glGenerateMipmap(GL_TEXTURE_2D);
