@@ -1,5 +1,5 @@
 #import "GPUImagePicture.h"
-#import "GPUImagePixelFormatConverter.h"
+#import "PixelFormatConverter.h"
 
 @implementation GPUImagePicture
 
@@ -260,8 +260,10 @@
         }
 
         if ([GPUImageContext deviceSupportsHalfFloats]) {
-            HalfFloatPixel *halfFloats = [GPUImagePixelFormatConverter halfFloatFromBytePixels:(BytePixel *)imageData numberOfPixels:totalNumberOfPixels];
+            HalfFloatPixel *halfFloats = malloc(totalNumberOfPixels * sizeof(HalfFloatPixel));
+            [PixelFormatConverter convertBytePixels:(BytePixel *)imageData toHalfFloatPixels:halfFloats numberOfPixels:totalNumberOfPixels];
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)pixelSizeToUseForTexture.width, (int)pixelSizeToUseForTexture.height, 0, format, GL_HALF_FLOAT_OES, halfFloats);
+            free(halfFloats);
         } else {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)pixelSizeToUseForTexture.width, (int)pixelSizeToUseForTexture.height, 0, format, GL_UNSIGNED_BYTE, imageData);
         }

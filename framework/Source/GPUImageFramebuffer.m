@@ -1,6 +1,6 @@
 #import "GPUImageFramebuffer.h"
 #import "GPUImageOutput.h"
-#import "GPUImagePixelFormatConverter.h"
+#import "PixelFormatConverter.h"
 
 @interface GPUImageFramebuffer()
 {
@@ -323,24 +323,22 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
             totalBytesForImage *= 2;
         }
         // It appears that the width of a texture must be padded out to be a multiple of 8 (32 bytes) if reading from it using a texture cache
-        BytePixel *rawImagePixels;
+        BytePixel *rawImagePixels = NULL;
         CGDataProviderRef dataProvider = NULL;
         if ([GPUImageContext supportsFastTextureUpload]) {
 #if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
             NSUInteger paddedWidthOfImage = CVPixelBufferGetBytesPerRow(renderTarget) / 4.0;
             if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
-                paddedWidthOfImage /= 2.0;
+                paddedWidthOfImage /= 2;
             }
             NSUInteger paddedBytesForImage = paddedWidthOfImage * (int)_size.height * 4;
-            if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
-                paddedBytesForImage /= 2.0;
-            }
-
             glFinish();
             CFRetain(renderTarget); // I need to retain the pixel buffer here and release in the data source callback to prevent its bytes from being prematurely deallocated during a photo write operation
             [self lockForReading];
             if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
-                rawImagePixels = [GPUImagePixelFormatConverter bytePixelsFromHalfFloatPixels:(HalfFloatPixel *)CVPixelBufferGetBaseAddress(renderTarget) numberOfPixels:numberOfPixels];
+                HalfFloatPixel *halfFloats = (HalfFloatPixel *)CVPixelBufferGetBaseAddress(renderTarget);
+                rawImagePixels = (BytePixel *)malloc(paddedBytesForImage);
+                [PixelFormatConverter convertHalfFloatPixels:halfFloats toBytePixels:rawImagePixels numberOfPixels:paddedWidthOfImage * self.size.height];
             } else {
                 rawImagePixels = (BytePixel *)CVPixelBufferGetBaseAddress(renderTarget);
             }
@@ -353,9 +351,11 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
         {
             [self activateFramebuffer];
             if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
-                HalfFloatPixel *halfFloats = malloc(numberOfPixels * sizeof(HalfFloatPixel));
+                HalfFloatPixel *halfFloats = (HalfFloatPixel *)malloc(numberOfPixels * sizeof(HalfFloatPixel));
                 glReadPixels(0, 0, (int)_size.width, (int)_size.height, GL_RGBA, GL_HALF_FLOAT_OES, halfFloats);
-                rawImagePixels = [GPUImagePixelFormatConverter bytePixelsFromHalfFloatPixels:halfFloats numberOfPixels:numberOfPixels];
+                rawImagePixels = (BytePixel *)malloc(self.size.width * self.size.height * sizeof(BytePixel));
+                [PixelFormatConverter convertHalfFloatPixels:halfFloats toBytePixels:rawImagePixels numberOfPixels:numberOfPixels];
+                free(halfFloats);
             } else {
                 rawImagePixels = (BytePixel *)malloc(numberOfPixels * sizeof(BytePixel));
                 glReadPixels(0, 0, (int)_size.width, (int)_size.height, GL_RGBA, GL_UNSIGNED_BYTE, rawImagePixels);
@@ -369,11 +369,12 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
         if ([GPUImageContext supportsFastTextureUpload])
         {
 #if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
+            CGBitmapInfo info = self.textureOptions.type == GL_HALF_FLOAT_OES ? kCGBitmapByteOrderDefault | kCGImageAlphaLast : kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst;
             NSUInteger bytesPerRow = CVPixelBufferGetBytesPerRow(renderTarget);
             if (self.textureOptions.type == GL_HALF_FLOAT_OES) {
-                bytesPerRow /= 2.0;
+                bytesPerRow /= 2;
             }
-            cgImageFromBytes = CGImageCreate((int)_size.width, (int)_size.height, 8, 32, bytesPerRow, defaultRGBColorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst, dataProvider, NULL, NO, kCGRenderingIntentDefault);
+            cgImageFromBytes = CGImageCreate((int)_size.width, (int)_size.height, 8, 32, bytesPerRow, defaultRGBColorSpace, info, dataProvider, NULL, NO, kCGRenderingIntentDefault);
 #else
 #endif
         }

@@ -1,12 +1,12 @@
 //
-//  GPUImagePixelFormatConverter.m
+//  PixelFormatConverter.m
 //  PanelRenderTests
 //
 //  Created by Tom Montgomery on 24/04/2016.
-//  Copyright © 2016 AkzoNobel. All rights reserved.
+//  Copyright © 2016 Tom Montgomery. All rights reserved.
 //
 
-#import "GPUImagePixelFormatConverter.h"
+#import "PixelFormatConverter.h"
 //#import <OpenGLES/ES2/gl.h>
 
 // -15 stored using a single precision bias of 127
@@ -19,7 +19,7 @@ static const unsigned int HALF_FLOAT_MAX_BIASED_EXP_AS_SINGLE_FP_EXP = 0x4780000
 static const unsigned int FLOAT_MAX_BIASED_EXP = (0xFF << 23);
 static const unsigned int HALF_FLOAT_MAX_BIASED_EXP = (0x1F << 10);
 
-@implementation GPUImagePixelFormatConverter
+@implementation PixelFormatConverter
 
 #pragma mark - Converting format of floats to half floats
 
@@ -103,56 +103,26 @@ static const unsigned int HALF_FLOAT_MAX_BIASED_EXP = (0x1F << 10);
 
 #pragma mark - Converting format of pixels arrays
 
-+ (FloatPixel *)floatPixelsFromBytePixels:(BytePixel *)bytePixels numberOfPixels:(NSUInteger)numberOfPixels
++ (void)convertBytePixels:(BytePixel *)bytePixels toHalfFloatPixels:(HalfFloatPixel *)halfFloatPixels numberOfPixels:(NSUInteger)numberOfPixels
 {
-    FloatPixel *floatPixels = (FloatPixel *)malloc(numberOfPixels * sizeof(FloatPixel));
-    for (NSUInteger idx = 0; idx < numberOfPixels; ++idx) {
-        BytePixel bytePixel = bytePixels[idx];
-        floatPixels[idx] = (FloatPixel){(float)(bytePixel.r / 255.0),
-                                        (float)(bytePixel.g / 255.0),
-                                        (float)(bytePixel.b / 255.0),
-                                        (float)(bytePixel.a / 255.0)};
-    }
-    return floatPixels;
-}
-
-+ (FloatPixel *)floatPixelsFromHalfFloatPixels:(HalfFloatPixel *)halfFloatPixels numberOfPixels:(NSUInteger)numberOfPixels
-{
-    FloatPixel *floatPixels = (FloatPixel *)malloc(numberOfPixels * sizeof(FloatPixel));
-    for (NSUInteger idx = 0; idx < numberOfPixels; ++idx) {
-        HalfFloatPixel halfFloatPixel = halfFloatPixels[idx];
-        floatPixels[idx] = (FloatPixel) {[self floatFromHalfFloat:halfFloatPixel.r],
-                                         [self floatFromHalfFloat:halfFloatPixel.g],
-                                         [self floatFromHalfFloat:halfFloatPixel.b],
-                                         [self floatFromHalfFloat:halfFloatPixel.a]};
-    }
-    return floatPixels;
-}
-
-+ (HalfFloatPixel *)halfFloatFromBytePixels:(BytePixel *)bytePixels numberOfPixels:(NSUInteger)numberOfPixels
-{
-    HalfFloatPixel *halfFloatPixels = (HalfFloatPixel *)malloc(numberOfPixels * sizeof(HalfFloatPixel));
     for (NSUInteger idx = 0; idx < numberOfPixels; ++idx) {
         BytePixel bytePixel = bytePixels[idx];
         halfFloatPixels[idx] = (HalfFloatPixel) {[self halfFloatFromByte:bytePixel.r],
-                                                 [self halfFloatFromByte:bytePixel.g],
-                                                 [self halfFloatFromByte:bytePixel.b],
-                                                 [self halfFloatFromByte:bytePixel.a]};
+            [self halfFloatFromByte:bytePixel.g],
+            [self halfFloatFromByte:bytePixel.b],
+            [self halfFloatFromByte:bytePixel.a]};
     }
-    return halfFloatPixels;
 }
 
-+ (BytePixel *)bytePixelsFromHalfFloatPixels:(HalfFloatPixel *)halfFloatPixels numberOfPixels:(NSUInteger)numberOfPixels
++ (void)convertHalfFloatPixels:(HalfFloatPixel *)halfFloatPixels toBytePixels:(BytePixel *)bytePixels numberOfPixels:(NSUInteger)numberOfPixels
 {
-    BytePixel *bytePixels = (BytePixel *)malloc(numberOfPixels * sizeof(BytePixel));
     for (NSUInteger idx = 0; idx < numberOfPixels; ++idx) {
         HalfFloatPixel halfFloatPixel = halfFloatPixels[idx];
         bytePixels[idx] = (BytePixel) {[self byteFromHalfFloat:halfFloatPixel.r],
-                                       [self byteFromHalfFloat:halfFloatPixel.g],
-                                       [self byteFromHalfFloat:halfFloatPixel.b],
-                                       [self byteFromHalfFloat:halfFloatPixel.a]};
+            [self byteFromHalfFloat:halfFloatPixel.g],
+            [self byteFromHalfFloat:halfFloatPixel.b],
+            [self byteFromHalfFloat:halfFloatPixel.a]};
     }
-    return bytePixels;
 }
 
 @end
