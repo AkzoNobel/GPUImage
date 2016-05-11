@@ -160,7 +160,7 @@ void reportAvailableMemoryForGPUImage(NSString *tag)
     _outputTextureOptions.wrapT = GL_CLAMP_TO_EDGE;
     _outputTextureOptions.internalFormat = GL_RGBA;
     _outputTextureOptions.format = GL_BGRA;
-    _outputTextureOptions.type = GL_UNSIGNED_BYTE;
+    _outputTextureOptions.type = [GPUImageContext deviceSupportsHalfFloats] ? GL_HALF_FLOAT_OES : GL_UNSIGNED_BYTE;
 
     return self;
 }
